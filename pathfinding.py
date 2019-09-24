@@ -79,7 +79,7 @@ class Simulator(object):
         self.mode_size = self.width_panel - 2 * self.mode_margin, 40
         self.mode_interval = self.mode_size[1] + self.mode_margin
 
-    def input(self):
+    def handle_event(self):
         for event in pygame.event.get():
             e_type = event.type
             e_dict = event.dict
@@ -264,7 +264,6 @@ class Simulator(object):
         if not self.heap:
             self.status = 'complete'
 
-        
     def complete(self):
         if self.start_time:
             self.end_time = time.time()
@@ -313,7 +312,7 @@ class Simulator(object):
 
     def exec(self):
         while True:
-            self.input()
+            self.handle_event()
 
             if self.status in {'ready', 'run'}:
                 self.run()
