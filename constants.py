@@ -1,0 +1,41 @@
+import pygame
+
+# 보드 크기
+CELL_SIZE = 30
+WIDTH_CNT = 30
+HEIGHT_CNT = 30
+
+# 패널 크기
+WIDTH_PANEL = 150
+MARGIN_PANEL = 20
+MODE_HEIGHT = 40
+
+# 클래스 상수
+FPS = 120
+DEFAULT_MODE = 'BFS'
+WITHOUT_DIAGONAL = ((0, -1), (-1, 0), (0, 1), (1, 0))
+WITH_DIAGONAL = ((0, -1), (-1, 0), (0, 1), (1, 0), (-1, -1), (-1, 1), (1, 1), (1, -1))
+
+# 폰트
+PATH_FONT = 'font/gulim.ttf'
+
+# 색깔
+COLOR_BLACK = 0, 0, 0
+COLOR_RED = 255, 0, 0
+COLOR_ORANGE = 255, 127, 0
+COLOR_YELLOW = 255, 255, 0
+COLOR_LIGHT_GREEN = 127, 255, 127
+COLOR_GREEN = 0, 255, 0
+COLOR_LIGHT_BLUE = 127, 255, 255
+COLOR_WHITE = 255, 255, 255
+COLOR_GRAY = 127, 127, 127
+
+# 마웃스 / 키 입력
+MOUSEBUTTONDOWN = pygame.MOUSEBUTTONDOWN
+MOUSEMOTION = pygame.MOUSEMOTION
+MOUSEBUTTONUP = pygame.MOUSEBUTTONUP
+KEYUP = pygame.KEYUP
+QUIT = pygame.QUIT
+K_ESCAPE = pygame.K_ESCAPE 
+K_SPACE = pygame.K_SPACE
+LEFT_CLICK = (1, 0, 0)

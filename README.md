@@ -1,6 +1,13 @@
 # Pathfinding Simulator
 
--fieldset-
+## 업데이트
+
+- Cell.trace 초기화 안되던 버그 수정
+- 일시정지 시 생기던 시간 측정 오류 개선
+
+- pathfinding.py 에서 알고리즘 함수들 분리해 algorithms.py 에 저장
+- 각종 상수들 constants.py 에 저장
+- 주석 처리
 
 ## 설치 / 실행
 
@@ -39,9 +46,10 @@ python3 pathfinding.py
 
 ## 업데이트 예정
 
-- 주석
 - 알고리즘 추가 (Best-First-Search, IDA*, Jump Point Search...)
 - 패널 UI 개선
+- 화면에 시간 표시
+- 대각선 탐색 추가
 
 ## 참고 링크
 
