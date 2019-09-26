@@ -1,7 +1,6 @@
 import pygame
 import sys
 import time
-from collections import deque
 
 import algorithms
 from constants import *
@@ -14,13 +13,13 @@ class Cell(object):
     def __init__(self, x_idx, y_idx):
         self.pos = x_idx, y_idx  # 셀의 위치 값(튜플)
         self.color = COLOR_WHITE  # 셀의 색깔 겸 시작점/끝점/벽/빈공간의 역할
-        self.trace = list()  # 셀의 자취, 최단경로(Simulator.path) 계산할 때 사용
+        self.prev = None  # # 이전 셀의 위치 값, 최단경로(Simulator.path) 계산할 때 사용
 
     def __lt__(self, other):  # 힙정렬 시 에러 방지용 메서드
         return False
         
     def __repr__(self):  # print 될 때 색 출력
-        return str(self.color)
+        return str(self.pos)
 
 
 class Simulator(object):
@@ -55,14 +54,14 @@ class Simulator(object):
         self.cells_flatten = [cell for column in self.cells_plane for cell in column]  # 인덱스 상관없이 모든 요소 순환할 때 요긴함
 
         # 변수 초기화
-        self.queue = deque()
-        self.heap = list()
         self.path = list()
         self.start_cell = self.cells_plane[1 - 1][1 - 1]
         self.end_cell = self.cells_plane[self.width_cnt - 1][self.height_cnt - 1]
         self.delta = WITHOUT_DIAGONAL
         # self.delta = WITH_DIAGONAL
         self.status = 'wait'
+        self.prev_cells = set()
+        self.next_cells = set()
         self.debug_list = list()
 
         # 시간
@@ -73,6 +72,7 @@ class Simulator(object):
 
         # 마우스 / 키 입력
         self.dragging = None
+
 
     def handle_event(self):
         '''
@@ -102,7 +102,9 @@ class Simulator(object):
                         if cell.color in {COLOR_LIGHT_GREEN, COLOR_LIGHT_BLUE}:
                             cell.color = COLOR_WHITE
                             cell.trace = list()
+                            cell.prev = None
                     self.path.clear()
+                    self.debug_list.clear()
 
             # 대기상태 일 때 ESC
             elif self.status == 'wait' and e_type == KEYUP and e_dict['key'] == K_ESCAPE:
@@ -154,6 +156,7 @@ class Simulator(object):
                             self.end_cell.color = COLOR_WHITE
                             self.end_cell = self.cells_plane[y_idx][x_idx]
 
+                    # 마우스 좌클릭 해체
                     elif e_type == MOUSEBUTTONUP:
                         self.dragging = None
 
@@ -173,6 +176,7 @@ class Simulator(object):
                                 self.mode = mode  # 모드 설정
                                 print('Mode: {}'.format(mode))
 
+            # 일시정지 중이거나 완료됐을 때
             elif self.status in ('pause', 'complete') and e_type in {MOUSEBUTTONDOWN, MOUSEMOTION, MOUSEBUTTONUP}:
                 x, y = e_dict['pos']
                 x_idx, y_idx = x // self.cell_size, y // self.cell_size
@@ -182,30 +186,46 @@ class Simulator(object):
                 if x < self.width_board:
                     cell = self.cells_plane[y_idx][x_idx]
 
-                    if self.mode == 'A*':
+                    # 디버그 정보 추가
+                    if self.mode == 'BFS':
+                        self.debug_list.append(((x, y), 'pos', cell.pos))
+                        self.debug_list.append(((x, y), 'prev', cell.prev))
+                    elif self.mode == 'A*':
+                        self.debug_list.append(((x, y), 'pos', cell.pos))
+                        self.debug_list.append(((x, y), 'prev', cell.prev))
                         self.debug_list.append(((x, y), 'F', cell.f))
                         self.debug_list.append(((x, y), 'G', cell.g))
                         self.debug_list.append(((x, y), 'H', cell.h))
+                    elif self.mode == 'Dijkstra':
+                        self.debug_list.append(((x, y), 'pos', cell.pos))
+                        self.debug_list.append(((x, y), 'prev', cell.prev))
+                        self.debug_list.append(((x, y), 'dist', cell.dist))
+
+            # 실행 중일 때 ESC
+            elif self.status == 'run' and e_type == KEYUP and e_dict['key'] == K_ESCAPE:
+                # 대기 중 상태로 전환 및 초기화
+                self.status = 'wait'
+                for cell in self.cells_flatten:
+                    if cell.color in {COLOR_LIGHT_GREEN, COLOR_LIGHT_BLUE}:
+                        cell.color = COLOR_WHITE
+                        cell.trace = list()
+                self.path.clear()
+                self.debug_list.clear()
 
     def ready(self):
         '''
         알고리즘 실행 전 설정
         '''
+        args = self.cells_plane, self.start_cell, self.end_cell, self.delta
+
         if self.mode == 'BFS':
-            self.data, self.func = algorithms.BFS_init(self.cells_plane)
-            # self.queue.append(self.start_cell)
-            
+            init_func = algorithms.BFS_init
         elif self.mode == 'A*':
-            for cell in self.cells_flatten:
-                cell.g, cell.h, cell.f = 0, 0, 0  #  A* 알고리즘을 위한 g, h, f 값 초기화
-            self.heap.append((self.start_cell.g, self.start_cell))
-
+            init_func = algorithms.Astar_init
         elif self.mode == 'Dijkstra':
-            for cell in self.cells_flatten:
-                cell.dist = 0 if cell == self.start_cell else float('inf')  # Dijkstra 알고리즘을 위한 dist 값 초기화
-                cell.prev = None                                            # Dijkstra 알고리즘을 위한 prev 값 초기화
-            self.heap.append((self.start_cell.dist, self.start_cell))
+            init_func = algorithms.dijkstra_init
 
+        self.data, self.func = init_func(*args)
         self.status = 'run'
         self.start_time = time.time()  # 시간 측정 시작
 
@@ -213,20 +233,45 @@ class Simulator(object):
         '''
         알고리즘 실행
         '''
-        if self.mode == 'BFS':
-            # args = self.queue, self.cells_plane, self.start_cell, self.end_cell, self.delta
-            args = self.cells_plane, self.start_cell, self.end_cell, self.delta
-            # self.status, self.path = algorithms.BFS(*args)
-            self.status, self.path = self.func(*args)
-            
-        elif self.mode == 'A*':
-            # args = self.heap, self.cells_plane, self.start_cell, self.end_cell, self.delta
-            args = self.cells_plane, self.start_cell, self.end_cell, self.delta
-            self.status, self.path = algorithms.A_star(*args)
+        # 알고리즘 함수의 자료구조에서 Cell 인스턴스 찾기
+        # 자료구조 요소가 iterable 이면 Cell 인스턴스가 있는 인덱스 찾기
+        if hasattr(self.data[0], '__iter__'):
+            for idx, element in enumerate(self.data[0]):
+                if isinstance(element, Cell):
+                    break
+        # 자료구조 요소가 iterable이 아니면 idx를 None으로 초기화
+        else:
+            idx = None
 
-        elif self.mode == 'Dijkstra':
-            args = self.heap, self.cells_plane, self.start_cell, self.end_cell, self.delta
-            self.status, self.path = algorithms.dijkstra(*args) 
+        # prev_cells 에 함수 실행 전 자료구조 상태 저장
+        # next_cells 에 함수 실행 후 자료구조 상태 저장
+        if idx is None:
+            self.prev_cells = set(self.data)
+            status = self.func()
+            self.next_cells = set(self.data)
+        else:
+            self.prev_cells = {data[idx] for data in self.data}
+            status = self.func()
+            self.next_cells = {data[idx] for data in self.data}
+
+        # 자료구조에서 제거된(확인된) cell 은 파란 색으로 색칠
+        for cell in self.prev_cells - self.next_cells:
+            cell.color = COLOR_LIGHT_BLUE
+        # 자료구조에 추가된(확인할) cell 은 초록 색으로 색칠
+        for cell in self.next_cells - self.prev_cells:
+            cell.color = COLOR_LIGHT_GREEN
+        self.prev_cells = self.next_cells
+
+        # 상태 업데이트
+        if status:
+            self.status = status
+
+        # 최단 경로 계산
+        self.path = []
+        target = self.end_cell
+        while target:
+            self.path.append(target.pos)
+            target = target.prev
 
     def complete(self):
         '''
@@ -238,12 +283,11 @@ class Simulator(object):
             self.start_time = 0.
             self.end_time = 0.
 
-            self.queue.clear()  # 자료구조 초기화
-            self.heap.clear()  # 자료구조 초기화
-
             # self.path의 인덱스 값을 실제 픽셀단위 위치로 변환
             idx_to_len = lambda idx: self.cell_size * idx + self.cell_size // 2
             self.path = [tuple(map(idx_to_len, (idx_x, idx_y))) for idx_x, idx_y in self.path]
+
+            self.prev_cells, self.next_cells = {}, {}
 
     def draw(self):
         '''
@@ -321,45 +365,6 @@ class Simulator(object):
             self.draw()  # 화면에 띄우기
 
             self.clock.tick(FPS)  # FPS 일정하게 조절
-
-    # 알고리즘 함수 데코레이터
-    @classmethod
-    def test(cls, ds, ds_name):
-        def decorator(f):
-            def wrapper(*args):
-                # 함수 내 자료구조 초기화
-                _, start, _, _ = args
-                if not getattr(wrapper, ds_name, None):
-                    setattr(wrapper, ds_name, ds([start]))
-
-                # 함수 리턴 값 초기화
-                wrapper.status = 'run'
-                wrapper.path = []
-
-                # 함수 실행
-                f(getattr(wrapper, ds_name), *args)
-
-                # 함수 자료구조 변화에 따라 파란색/초록색 칠하기
-                if not getattr(wrapper, 'prev_cells', None):
-                    setattr(wrapper, 'prev_cells', {})
-                prev_cells = set(getattr(wrapper, 'prev_cells', '{}'))
-                next_cells = set(getattr(wrapper, ds_name))
-
-                blue = prev_cells - next_cells
-                green = next_cells - prev_cells
-                for cell in blue:
-                    cell.color = COLOR_LIGHT_BLUE
-                for cell in green:
-                    cell.color = COLOR_LIGHT_GREEN
-                wrapper.prev_cells = next_cells
-
-                # 완료 시 함수 변수 초기화
-                if wrapper.status == 'complete':
-                    setattr(wrapper, ds_name, None)
-                    setattr(wrapper, 'prev_cells', None)
-                return wrapper.status, wrapper.path
-            return wrapper
-        return decorator
 
 
 if __name__ == '__main__':
