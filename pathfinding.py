@@ -24,6 +24,8 @@ class Cell(object):
 
 
 class Simulator(object):
+    data_structure = None
+
     def __init__(self):
         # 알고리즘 선택 가능 모드
         self.modes = ['BFS', 'A*', 'Dijkstra']
@@ -59,7 +61,9 @@ class Simulator(object):
         self.start_cell = self.cells_plane[1 - 1][1 - 1]
         self.end_cell = self.cells_plane[self.width_cnt - 1][self.height_cnt - 1]
         self.delta = WITHOUT_DIAGONAL
+        # self.delta = WITH_DIAGONAL
         self.status = 'wait'
+        self.debug_list = list()
 
         # 시간
         self.clock = pygame.time.Clock()
@@ -168,14 +172,28 @@ class Simulator(object):
                             if mode_left < x < mode_right and mode_top < y < mode_bottom:
                                 self.mode = mode  # 모드 설정
                                 print('Mode: {}'.format(mode))
-                                break
+
+            elif self.status in ('pause', 'complete') and e_type in {MOUSEBUTTONDOWN, MOUSEMOTION, MOUSEBUTTONUP}:
+                x, y = e_dict['pos']
+                x_idx, y_idx = x // self.cell_size, y // self.cell_size
+                self.debug_list.clear()
+
+                # 마우스가 보드 안
+                if x < self.width_board:
+                    cell = self.cells_plane[y_idx][x_idx]
+
+                    if self.mode == 'A*':
+                        self.debug_list.append(((x, y), 'F', cell.f))
+                        self.debug_list.append(((x, y), 'G', cell.g))
+                        self.debug_list.append(((x, y), 'H', cell.h))
 
     def ready(self):
         '''
         알고리즘 실행 전 설정
         '''
         if self.mode == 'BFS':
-            self.queue.append(self.start_cell)
+            self.data, self.func = algorithms.BFS_init(self.cells_plane)
+            # self.queue.append(self.start_cell)
             
         elif self.mode == 'A*':
             for cell in self.cells_flatten:
@@ -196,11 +214,14 @@ class Simulator(object):
         알고리즘 실행
         '''
         if self.mode == 'BFS':
-            args = self.queue, self.cells_plane, self.start_cell, self.end_cell, self.delta
-            self.status, self.path = algorithms.BFS(*args)
+            # args = self.queue, self.cells_plane, self.start_cell, self.end_cell, self.delta
+            args = self.cells_plane, self.start_cell, self.end_cell, self.delta
+            # self.status, self.path = algorithms.BFS(*args)
+            self.status, self.path = self.func(*args)
             
         elif self.mode == 'A*':
-            args = self.heap, self.cells_plane, self.start_cell, self.end_cell, self.delta
+            # args = self.heap, self.cells_plane, self.start_cell, self.end_cell, self.delta
+            args = self.cells_plane, self.start_cell, self.end_cell, self.delta
             self.status, self.path = algorithms.A_star(*args)
 
         elif self.mode == 'Dijkstra':
@@ -266,6 +287,19 @@ class Simulator(object):
             font_top = self.margin_panel + num * (self.mode_size[1] + self.margin_panel) + (self.mode_size[1] - font_size[1]) / 2
             self.screen.blit(font_surface, (font_left,font_top))
 
+        # 디버그 변수 텍스트 설정
+        if self.status in ('pause', 'complete'):
+            font = pygame.font.Font(PATH_FONT, 15)
+            for num, debug_v in enumerate(self.debug_list): 
+            # while self.debug_list:
+            #     (debug_x, debug_y), debug_name, debug_value = self.debug_list.pop()
+                (debug_x, debug_y), debug_name, debug_value = debug_v
+                font_surface = font.render('{}: {}'.format(debug_name, debug_value), True, COLOR_BLACK)
+                font_size = font_surface.get_size()
+                font_left = debug_x + 15
+                font_top = debug_y + num * 15
+                self.screen.blit(font_surface, (font_left,font_top))
+        
         # 화면에 띄우기
         pygame.display.flip()
         # pygame.display.update()
@@ -287,6 +321,45 @@ class Simulator(object):
             self.draw()  # 화면에 띄우기
 
             self.clock.tick(FPS)  # FPS 일정하게 조절
+
+    # 알고리즘 함수 데코레이터
+    @classmethod
+    def test(cls, ds, ds_name):
+        def decorator(f):
+            def wrapper(*args):
+                # 함수 내 자료구조 초기화
+                _, start, _, _ = args
+                if not getattr(wrapper, ds_name, None):
+                    setattr(wrapper, ds_name, ds([start]))
+
+                # 함수 리턴 값 초기화
+                wrapper.status = 'run'
+                wrapper.path = []
+
+                # 함수 실행
+                f(getattr(wrapper, ds_name), *args)
+
+                # 함수 자료구조 변화에 따라 파란색/초록색 칠하기
+                if not getattr(wrapper, 'prev_cells', None):
+                    setattr(wrapper, 'prev_cells', {})
+                prev_cells = set(getattr(wrapper, 'prev_cells', '{}'))
+                next_cells = set(getattr(wrapper, ds_name))
+
+                blue = prev_cells - next_cells
+                green = next_cells - prev_cells
+                for cell in blue:
+                    cell.color = COLOR_LIGHT_BLUE
+                for cell in green:
+                    cell.color = COLOR_LIGHT_GREEN
+                wrapper.prev_cells = next_cells
+
+                # 완료 시 함수 변수 초기화
+                if wrapper.status == 'complete':
+                    setattr(wrapper, ds_name, None)
+                    setattr(wrapper, 'prev_cells', None)
+                return wrapper.status, wrapper.path
+            return wrapper
+        return decorator
 
 
 if __name__ == '__main__':
